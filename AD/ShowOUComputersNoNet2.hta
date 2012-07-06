@@ -1,0 +1,120 @@
+<HTML>
+<HEAD>
+<SCRIPT LANGUAGE="VBScript">
+' ShowOUComptuers.hta
+' by Jim Montgomery
+' This script asks for a AD container and a DC name.  It will get a list of computer objects in that container, 
+' and display their names, IP addresses, and maybe even subnet info
+
+Sub RunScript
+  if (txtDN.value <> "") Then
+	strDN = txtDN.value
+  End if
+  if (txtDC.value <> "") Then
+    StrDomainC = txtDC.value
+  End if
+  	
+Data.InnerHTML = strDN
+
+' msgbox "LDAP://" & strDomainC & "/" & strDN
+Set objContainer = GetObject( "LDAP://" & strDomainC & "/" & strDN )
+
+objContainer.Filter = Array("computer")
+For Each objChild In objContainer
+	CompName = objChild.CN
+	Data.InnerHTML = Data.InnerHTML &  "<pre>" & CurrentComputerName & vbTab & pingComp(CompName) & "</pre><br>" & vbCrLf
+Next
+
+MsgBox ("Script Complete")
+End Sub
+
+Function LastSet(objDate)
+  lngHigh = objDate.HighPart
+  lngLow = objDate.LowPart
+
+  If (lngHigh = 0) And (lngLow = 0) Then
+    lngAdjust = 0
+  End If
+
+  lngDate = #1/1/1601# + (((lngHigh * (2 ^ 32)) _
+    + lngLow) / 600000000 - lngAdjust) / 1440
+
+  LastSet= CDate(lngDate)
+End Function
+
+'Function IsConnectible(strHost, intPings, intTO)
+Function IsConnectible(strHost,ip)
+' Returns True if strHost can be pinged.
+' Based on a program by Alex Angelopoulos and Torgeir Bakken.
+  Set objShell = CreateObject("Wscript.Shell")
+  Set objFSO = CreateObject("Scripting.FileSystemObject")
+  
+  strTemp = objShell.ExpandEnvironmentStrings("%TEMP%")
+  strTempFile = strTemp & "\RunResult.tmp"
+  
+  Dim objFile, strResults
+
+  intPings = 2
+  intTO = 750
+
+  Const OpenAsDefault = -2
+  Const FailIfNotExist = 0
+  Const ForReading = 1
+
+  objShell.Run "%comspec% /c ping -n " & intPings & " -w " & intTO & " " & chr(34) & strHost & chr(34) & " >" & strTempFile, 0, True
+
+  Set objFile = objFSO.OpenTextFile(strTempFile, ForReading, FailIfNotExist, OpenAsDefault)
+  strResults = objFile.ReadAll
+  objFile.Close
+
+'#############################3            get the IP address!!!
+
+if InStr(StrResults, "Unknown host") then 
+	ip = "Unknown host"
+end if
+if instr(StrResults, "Destination host") then 
+	ip = Right (StrResults, len(strResults) - InStr(strResults, "from"))	'everything right of the first "from"
+	strpos = InStr(ip, ":")
+	ip = Left (ip, Cint(strpos)-5)		'everything lef tof the :	
+end if 
+if InStr(StrResults, "[") then 
+	ip = Right (StrResults, len(strResults) - InStr(strResults, "["))	'everything right of the first [
+	strpos = InStr(ip, "]")
+	ip = Left (ip, Cint(strpos)-1)				'everything left of the ]
+end if 
+
+  Select Case InStr(strResults, "TTL=")
+    Case 0
+      IsConnectible = False
+    Case Else
+      IsConnectible = True
+  End Select
+  
+  set objShell= nothing
+  set objFSO = nothing
+
+End Function
+
+function pingComp(strComputer)
+    Set objWMIService = GetObject("winmgmts:\\.\root\cimv2")
+    Set colPings = objWMIService.ExecQuery ("Select * From Win32_PingStatus where Address = '" & strComputer & "'")
+
+    For Each objStatus in colPings
+        If IsNull(objStatus.StatusCode) _
+            or objStatus.StatusCode<>0 Then 
+            pingComp = 0
+        Else
+            pingComp = 1
+        End If
+    Next
+End function
+
+</SCRIPT>
+</HEAD>
+<BODY>
+OU Name: <input type=text size=80 name=txtDN value="OU=Workstations,DC=domain,DC=com"><br>
+DC Hostname: <input type=text name=txtDC value="server"><br>
+<input type=submit onclick=RunScript() value="Get Comps"> <input type=reset value="Reset">
+<p><span id="Data"></span></p>
+</BODY>
+</HTML>
